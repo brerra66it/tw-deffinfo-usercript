@@ -4,11 +4,11 @@
 // @version        2.2
 // @description	   Zaehlt auf der Seite >Truppen-Verteidigung< die Unterstuetzungen jedes Spielers zusammen und bietet eine Funktion um diese zu exportieren und die Truppen spielerweise zurueckzuschicken, fasst auf der Seite >Truppen-Unterstuetzungen< die Truppen ausserhalb Doerfer- und Spielerweise zusammen (auch hier kann man die Infos exportieren und Spieler/Doerferweise Truppen abziehen) und zeigt auf den Seiten >Uebersicht-Truppen-Im Dorf<, >Versammlungsplatz-Truppen< und in der Dorfansicht an, wieviele Truppen im Dorf sind oder zum Dorf laufen. Auf der VP-Seite >Truppen< wird zusaetzlich die Entfernung zum Herkunftsdorf jeder Unterstuetzung eingefuegt und man kann die Doerfer danach sortieren.
 // @include 	   https://ru*.voyna-plemyon.ru/game.php*screen=settings*
-// @include 	   https://ru*.voyna-plemyon.ru/game.php*mode=units*
 // @include 	   https://ru*.voyna-plemyon.ru/game.php*view*screen=report*
-// @include 	   https://ru*.voyna-plemyon.ru/game.php*screen=overview
+// @include 	   https://ru*.voyna-plemyon.ru/game.php*screen=overview*
 // @include 	   https://ru*.voyna-plemyon.ru/game.php*screen=overview*t=*
 // @include 	   https://ru*.voyna-plemyon.ru/game.php*t=*screen=overview*
+// @exclude 	   https://ru*.voyna-plemyon.ru/game.php*screen=place
 // @exclude 	   https://ru*.voyna-plemyon.ru/game.php*mode=notify*
 // ==/UserScript==
 //Script registrieren
