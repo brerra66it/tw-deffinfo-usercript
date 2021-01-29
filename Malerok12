@@ -1,0 +1,1498 @@
+// ==UserScript==
+// @name           Malerok12
+// @namespace      http://osor.de/
+// @include        http://ru*.voyna-plemyon.ru/game.php*
+// @include        https://ru*.voyna-plemyon.ru/game.php*
+// ==/UserScript==
+
+// version 0.2
+// version 0.3 - Check num of units, fix removing
+// version 0.4 - no message boxes for autofarm start stop
+// version 0.5 - all villages farm
+// version 0.6 - axees farm
+
+// version 0.7 - many changes, ru 16
+// version 0.8 - Axe distance to config
+// version 0.9 - Auto add farm list
+// 1.0 - filter atacks, rmeove timers
+// 1.1 - remember units from prev selection, read world name
+// 1.2 - add settings
+// 1.5 - fix alll unit append start button
+
+(function() {
+	// Common tools
+	var currentVillageId = 0;
+	var curCoordinates;
+	var curVilCoordinates;
+	var watcher = 0;
+	var version = '1.5';
+	var worldid = '0';
+
+	var getWorldId = function()
+	{
+		if(/ru\d+.voyna-plemyon.ru/.test(window.location))
+		{
+			// parse to get vilage id
+			var worldpattern = /ru(\d+).voyna-plemyon.ru/;
+			var m = worldpattern.exec(window.location);
+			worldid = m[1];
+		}
+	}
+
+	var refreshPlaceNext = function (isnext)
+	{
+		var location = 'https://ru' + worldid + '.voyna-plemyon.ru/game.php?';
+
+		if (watcher != 0 && isnext == 0)
+		{
+			location += 't=' + watcher + '&';
+		}
+		location += 'village=';
+		if (isnext)
+		{
+			location += 'n';
+		}
+
+		location += '' + currentVillageId + '&screen=place';
+		if (isnext != 0 && watcher != 0)
+		{
+			location += '&t=' + watcher;
+		}
+		window.location = location;
+	}
+	var setCurrentVillageId = function()
+	{
+		var nodes = document.getElementsByTagName('a');
+
+		for(var i = 0; i < nodes.length; i++) {
+			if(/village=\d+&screen=overview/.test(nodes[i].href))
+			{
+				// parse to get vilage id
+				var vilidpattern = /village=(\d+)&screen=overview/;
+				var m = vilidpattern.exec(nodes[i].href);
+				currentVillageId = m[1];
+				break;
+			}
+		}
+
+		// watcher
+
+		// parse to get vilage id
+		var watchpattern = /t=(\d+)&/;
+		var m = watchpattern.exec(window.location);
+		if (m != null)
+		{
+			watcher = m[1];
+		}
+		else
+		{
+			var watchpattern = /t=(\d+)/;
+		  m = watchpattern.exec(window.location);
+		}
+		if (m != null)
+		{
+			watcher = m[1];
+		}
+
+		// find current village coordinates
+		nodes = document.getElementsByTagName('b');
+
+		for(var i = 0; i < nodes.length; i++) {
+			curVilCoordinates=nodes[i].innerHTML.slice(1,8);
+			break;
+		}
+	}
+
+	var addFarmList = function(curCoord) {
+
+			curCoordinates = GM_getValue('autoFarmCoordinates_' + currentVillageId, '0');
+
+			//First time add
+			if (curCoordinates==0)
+			{
+				GM_setValue('autoFarmCoordinates_' + currentVillageId, curCoord);
+			}
+			else
+			{
+				// Now split existing coordinates list and compare if we already have it
+				curCoordinates=curCoordinates.split(" ");
+				var i;
+				for(i = 0; i < curCoordinates.length; i++) {
+					if (curCoordinates[i] == curCoord)
+					{
+						//window.alert("Деревня " + curCoord + " уже в листе");
+						break;
+					}
+				}
+				if (i == curCoordinates.length)
+				{
+					curCoordinates = GM_getValue('autoFarmCoordinates_' + currentVillageId, '');
+					GM_setValue('autoFarmCoordinates_' + currentVillageId, curCoordinates + ' ' + curCoord);
+				}
+			}
+	}
+
+	// Info vilage
+	var addFarm = function() {
+		// Get target village coordinates
+		var nodes = document.getElementsByTagName('td');
+		var vilidcoord =/(^Координаты)/;
+		var curCoord=0;
+
+		for(var i = 0; i < nodes.length; i++) {
+			var m = vilidcoord.exec(nodes[i].innerHTML);
+			if(m)
+			{
+				curCoord = nodes[i].nextElementSibling.innerHTML;
+				break;
+			}
+		}
+
+		if (curCoord != 0)
+		{
+			addFarmList(curCoord);
+			window.alert("Добавлена или уже в листе, пофиг.");
+		}
+	}
+
+	var EmptyCreateList = function()
+	{
+
+		var coords = curVilCoordinates;
+
+		coords = coords.split("|");
+		var offset = 20;
+		var startX = parseInt(coords[0]) - offset;
+		var startY = parseInt(coords[1]) - offset;
+
+		// add all coordinates
+		for (var i = startX; i < (startX + offset * 2 + 1); i++)
+		{
+			for (var j = startY; j < (startY + offset * 2 + 1); j++)
+			{
+				var tmp = '' + i + '|' + j;
+				addFarmList(tmp);
+			}
+		}
+	}
+
+	var removeFarmList = function(coord) {
+			curCoordinates = GM_getValue('autoFarmCoordinates_' + currentVillageId, '0|0');
+
+			// Now split existing coordinates list and compare if we already have it
+			curCoordinates=curCoordinates.split(" ");
+			var i;
+			var found = 0;
+			var tmpStr = '';
+			for(i = 0; i < curCoordinates.length; i++) {
+				if (curCoordinates[i] == coord)
+				{
+					found = 1;
+				}
+				else
+				{
+					if (tmpStr == '')
+					{
+						tmpStr = curCoordinates[i];
+					}
+					else
+					{
+						tmpStr += ' ' + curCoordinates[i];
+					}
+				}
+			}
+			if (found == 1)
+			{
+				GM_setValue('autoFarmCoordinates_' + currentVillageId, tmpStr);
+			}
+	}
+
+
+	var refreshPlace = function (isnext)
+	{
+		refreshPlaceNext(0);
+	}
+
+	// checks if valid coord
+	var checkErrorWrongDistanation = function ()
+	{
+		//<td id="error" class="error">Нет такого пункта назначения.</td>
+		var nodes = document.getElementsByTagName('td');
+
+		for(var i = 0; i < nodes.length; i++) {
+			var textval = nodes[i].innerHTML;
+			var remove = 0;
+
+			var n = textval.indexOf('Нет такого пункта назначения.');
+			if (n != -1)
+			{
+				remove = 1;
+			}
+
+			n = textval.indexOf('Недопустимый пункт назначения');
+			if (n != -1)
+			{
+				remove = 1;
+			}
+
+			n = textval.indexOf('В нападающем отряде');
+			if (n != -1)
+			{
+				var checkbarb = GM_getValue("autoFarmCheckBarb", 100);
+				if (checkbarb == '1')
+				{
+					remove = 1;
+				}
+			}
+
+			if (remove == 1)
+			{
+				//window.alert(" 'Нет такого пункта назначения.' ");
+				// remove village from the list
+				// read unit and coordinates and atack
+				var corX = document.getElementById('inputx');
+				var corY = document.getElementById('inputy');
+				var tmp = '' + corX.value + '|' + corY.value;
+				removeFarmList(tmp);
+
+				setTimeout(refreshPlace, 2 * 1000);
+			}
+
+		}
+		//window.alert('done');
+	}
+
+	var removeFarm = function() {
+		// Get target village coordinates
+		var nodes = document.getElementsByTagName('td');
+		var vilidcoord =/(^Координаты)/;
+		var curCoord=0;
+
+		for(var i = 0; i < nodes.length; i++) {
+			var m = vilidcoord.exec(nodes[i].innerHTML);
+			if(m)
+			{
+				curCoord = nodes[i].nextElementSibling.innerHTML;
+			}
+		}
+
+		if (curCoord != 0)
+		{
+			removeFarmList(curCoord);
+			window.alert("Деревня " + curCoord + " удаленна");
+		}
+	}
+
+	var infoVillageAddFunc = function()
+	{
+		// Place, add autofarm button
+		var nodes = document.getElementsByTagName('a');
+		//window.alert('len' + nodes.length);
+		for(var i = 0; i < nodes.length; i++) {
+			if(/action=add_target/.test(nodes[i].href))
+			{
+				var farm1 = document.createElement('td');
+				farm1.innerHTML = "\n		<a id=\"autoFarm\" href=\"#\">» Удалить из aвтофарма</a>\n	";
+				farm1.addEventListener('click',removeFarm,true);
+				nodes[i].parentNode.parentNode.insertBefore(farm1, nodes[i].parentNode.nextSibling);
+
+				var farm = document.createElement('td');
+				farm.innerHTML = "\n		<a id=\"autoFarm\" href=\"#\">» Добавить aвтофарм</a>\n	";
+				farm.addEventListener('click',addFarm,true);
+				nodes[i].parentNode.parentNode.insertBefore(farm, nodes[i].parentNode.nextSibling);
+
+				break;
+			}
+		}
+	}
+
+	// Autofarm, read number of units for farm
+	var lc;
+	var spy;
+	var axe;
+	var spear;
+
+	var autoFarmGetUnits = function ()
+	{
+		//insertUnit(document.forms[0].spear,0);
+		//insertUnit(document.forms[0].sword,0);
+		//insertUnit(document.forms[0].axe,0);
+		//insertUnit(document.forms[0].spy,0);
+		//insertUnit(document.forms[0].light,10);
+		//insertUnit(document.forms[0].heavy,0);
+		//insertUnit(document.forms[0].ram,0);
+		//insertUnit(document.forms[0].catapult,0);
+		var allUnits, thisUnit;
+		allUnits = document.evaluate(
+		    "//input[@class='unitsInput']",
+		    document,
+		    null,
+		    XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE,
+		    null);
+		for (var i = 0; i < allUnits.snapshotLength; i++) {
+		    thisUnit = allUnits.snapshotItem(i);
+
+			var unitconfig = '';
+			var unitnum;
+
+		    // do something with thisDiv
+			if (thisUnit.name == 'light')
+			{
+				unitconfig = "autoFarmUnitLc";
+			}
+			else if (thisUnit.name == 'spy')
+			{
+				unitconfig = "autoFarmUnitSpy";
+			}
+			else if (thisUnit.name == 'axe')
+			{
+				unitconfig = "autoFarmUnitAxe";
+			}
+			else if (thisUnit.name == 'spear')
+			{
+				unitconfig = "autoFarmUnitSpear";
+			}
+
+			if (unitconfig != '')
+			{
+				unitnum = thisUnit.value;
+
+				if (unitnum == '')
+				{
+					unitnum = GM_getValue(unitconfig, 1000);
+					if (unitnum == '1000')
+					{
+						unitnum = '0';
+					}
+				}
+				GM_setValue(unitconfig, unitnum);
+			}
+		}
+	}
+
+	var autoFarmButtonPlace = function ()
+	{
+		// Place, add autofarm button
+		var nodes = document.getElementsByTagName('a');
+		//window.alert('len' + nodes.length);
+		for(var i = 0; i < nodes.length; i++) {
+			if('selectAllUnits' == nodes[i].getAttribute('id'))
+			{
+				//window.alert('found ');
+				dsrbAddAutoFarmButton(nodes[i]);
+				break;
+			}
+		}
+	}
+
+	var stopTimers = function ()
+	{
+		// find atack button
+		var allButtons, thisButton;
+		allUnits = document.evaluate(
+		    "//span[@class='timer']",
+		    document,
+		    null,
+		    XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE,
+		    null);
+
+
+		for (var i = 0; i < allUnits.snapshotLength; i++)
+		{
+		    thisUnit = allUnits.snapshotItem(i);
+
+		  // replace time for the first one and stop other
+		  if (i == 0)
+		  {
+		  	// Wait 10-25 minutes
+				var time=Math.floor(Math.random()*15) + 10;
+		  	thisUnit.innerHTML = "00:" + time + ":00";
+		  }
+		  else
+		  {
+		    // do something with thisDiv
+				//thisUnit.baseURL == 'notimer')
+				var parent = thisUnit.parentNode;
+
+				//window.alert(parent.innerHTML);
+				var len = parent.childNodes.length;
+
+	       for(var j = 0; j < len; j++)
+	       {
+	            parent.removeChild(parent.childNodes[j]);
+
+	       }
+     }
+		}
+
+	}
+
+	var filterAtacks = function ()
+	{
+		// Place, add autofarm button
+		var nodes = document.getElementsByTagName('span');
+		var str;
+
+		//window.alert('len' + nodes.length);
+		for(var i = 0; i < nodes.length; i++) {
+			str = nodes[i].innerHTML;
+
+			if(/^Возвращение/.test(str))
+			{
+				var start = 23;
+				var num = str.length - 4 - start;
+				var newStr = str.substr(start, num);
+
+				nodes[i].innerHTML = newStr;
+
+			}
+			else if(/^Нападение/.test(str))
+			{
+				var start = 21;
+				var num = str.length - 4 - start;
+				var newStr = str.substr(start, num);
+
+				nodes[i].innerHTML = newStr;
+				f = i;
+			}
+
+		}
+	}
+	// wait for the random time interval and send atack based on configuration
+	var autoFarmWait = function(loc)
+	{
+		var farmWait;
+		var coord_ok = 1;
+
+		stopTimers();
+
+		farmWait = GM_getValue('autoFarmWait_' + watcher, 0);
+
+		// timeout
+		var time
+
+		// Wait 3-7 seconds
+		//time=1000*3 + 1000*Math.floor(Math.random()*4);
+		time=1000*3 + 1000*Math.floor(Math.random());
+
+		if (loc == 1)
+		{
+
+				// if farm was disabled do nothing
+				if (autoFarmState == 1)
+				{
+					// check if the target was real
+					checkErrorWrongDistanation();
+
+					var coords=GM_getValue('autoFarmCoordinates_' + currentVillageId, '0|0');
+					// new vilage, nothing to do
+
+					if (coords == '0|0' || coords == '')
+					{
+						EmptyCreateList();
+					}
+
+					coords=coords.split(" ");
+					// read the index
+					var autoFarmIndex = GM_getValue("autoFarmIndex_" + currentVillageId, 0);
+
+					if(autoFarmIndex >= coords.length)
+					{
+						autoFarmIndex = 0;
+					}
+					coords=coords[autoFarmIndex];
+
+					coords=coords.split("|");
+
+					// Get distance
+					curVilCoordinates=curVilCoordinates.split("|");
+
+					{
+						var axeDistance = GM_getValue('autoFarmAxe', '100');
+						if (axeDistance == 100)
+						{
+							GM_setValue('autoFarmAxe', 0);
+							axeDistance = 0;
+						}
+						var distance = Math.sqrt( Math.pow(parseInt(coords[0]) - parseInt(curVilCoordinates[0]), 2)    +    Math.pow(parseInt(coords[1]) - parseInt(curVilCoordinates[1]), 2) );
+						var isAxe;
+
+						if (distance <= axeDistance)
+						{
+							isAxe = 1;
+						}
+						else
+						{
+							isAxe = 0;
+						}
+					}
+
+					lc = GM_getValue("autoFarmUnitLc", '0');
+					spy = GM_getValue("autoFarmUnitSpy", '0');
+					axe = GM_getValue("autoFarmUnitAxe", '0');
+					spear = GM_getValue("autoFarmUnitSpear", '0');
+
+					//insertUnit(document.forms[0].spear,0);
+					//insertUnit(document.forms[0].sword,0);
+					//insertUnit(document.forms[0].axe,0);
+					//insertUnit(document.forms[0].spy,0);
+					//insertUnit(document.forms[0].light,10);
+					//insertUnit(document.forms[0].heavy,0);
+					//insertUnit(document.forms[0].ram,0);
+					//insertUnit(document.forms[0].catapult,0);
+
+					if (axe == '0')
+					{
+						isAxe = 0;
+					}
+					var allUnits, thisUnit;
+					allUnits = document.evaluate(
+					    "//input[@class='unitsInput']",
+					    document,
+					    null,
+					    XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE,
+					    null);
+
+					var curUnitExpression =/(\()([0-9]+)(\))/;
+					var enoughUnits = 0;
+					var reqNum;
+					var lcIndex;
+					var axeIndex;
+					var spearIndex;
+					var scoutIndex;
+					var enoughScout = 0;
+					var enoughLc = 0;
+					var enoughAxe = 0;
+					var enoughSpear = 0;
+
+					for (var i = 0; i < allUnits.snapshotLength && coords.length > 1; i++) {
+					    thisUnit = allUnits.snapshotItem(i);
+
+					    // do something with thisDiv
+						if (thisUnit.name == 'light')
+						{
+							reqNum = lc;
+							lcIndex = i;
+						}
+						else if (thisUnit.name == 'spy')
+						{
+							reqNum = spy;
+							scoutIndex = i;
+						}
+						else if (thisUnit.name == 'axe')
+						{
+							reqNum = axe;
+							axeIndex = i;
+						}
+						else if (thisUnit.name == 'spear')
+						{
+							reqNum = spear;
+							spearIndex = i;
+						}
+						else
+						{
+							continue;
+						}
+
+						// Check if we have this unit available
+						var m = curUnitExpression.exec(thisUnit.nextElementSibling.innerHTML);
+						if (farmWait == 0 || farmWait == 2) // 0 - just started, 2 - go through all villages
+						{
+							if (parseInt(m[2]) < parseInt(reqNum))
+							{
+								enoughUnits = 0;
+							}
+							else
+							{
+								enoughUnits = 1;
+								//thisUnit.value = reqNum;
+							}
+						}
+						else // farmWait == 1 wait 150 LK
+						{
+							// Wait for 10 times of what we need
+							var mult;
+							if (axeIndex == i)
+							{
+								// don't wait axes
+								//mult = 1;
+								mult = Math.floor(Math.random()*2) + 1;
+							}
+							else
+							{
+								//mult = 1;
+								mult = Math.floor(Math.random()*3) + 0;
+							}
+
+							if (parseInt(m[2]) < (mult * parseInt(reqNum)))
+							{
+								enoughUnits = 0;
+							}
+							else
+							{
+								enoughUnits = 1;
+								//thisUnit.value = reqNum;
+							}
+						}
+
+						if (thisUnit.name == 'light')
+						{
+							enoughLc = enoughUnits;
+
+						}
+						else if (thisUnit.name == 'spy')
+						{
+							enoughScout = enoughUnits;
+
+
+						}
+						else if (thisUnit.name == 'axe')
+						{
+							enoughAxe = enoughUnits;
+
+						}
+						else if (thisUnit.name == 'spear')
+						{
+							enoughSpear = 1;
+							if (enoughUnits == 0)
+								spear = m[2]
+
+						}
+					}
+
+					// Insert scout
+					if (enoughScout == 1)
+					{
+						thisUnit = allUnits.snapshotItem(scoutIndex);
+						thisUnit.value = spy;
+					}
+
+					// if short distance and enough lc
+					if (isAxe)
+					{
+						if (enoughAxe == 1)
+						{
+							thisUnit = allUnits.snapshotItem(axeIndex);
+							thisUnit.value = axe;
+							thisUnit = allUnits.snapshotItem(spearIndex);
+							if (enoughSpear == 1)
+							{
+							//	thisUnit.value = spear;
+							}
+							enoughLc = 1;
+							thisUnit = allUnits.snapshotItem(lcIndex);
+							thisUnit.value = '0';
+						}
+						//else if (enoughLc == 1)
+						//{
+						//	thisUnit = allUnits.snapshotItem(lcIndex);
+						//	thisUnit.value = lc;
+						//	enoughAxe = 1;
+						//}
+						else if (enoughLc == 1)
+						{
+							thisUnit = allUnits.snapshotItem(lcIndex);
+							thisUnit.value = lc;
+							enoughAxe = 1;
+							// reset other fields
+							thisUnit = allUnits.snapshotItem(axeIndex);
+							thisUnit.value = '0';
+							thisUnit = allUnits.snapshotItem(spearIndex);
+							thisUnit.value = '0';
+						}
+					}
+					else
+					{
+						if (enoughLc == 1)
+						{
+							thisUnit = allUnits.snapshotItem(lcIndex);
+							thisUnit.value = lc;
+							enoughAxe = 1;
+							// reset other fields
+							thisUnit = allUnits.snapshotItem(axeIndex);
+							thisUnit.value = '0';
+							thisUnit = allUnits.snapshotItem(spearIndex);
+							thisUnit.value = '0';
+						}
+					}
+
+					// if all units set
+					if (enoughLc == 1 && enoughScout == 1 && enoughAxe == 1 && coord_ok == 1)
+					{
+
+						if (farmWait != 0)
+						{
+							GM_setValue('autoFarmWait_' + watcher, 0);
+						}
+
+						// insert unit and coordinates and atack
+						var corX = document.getElementById('inputx');
+						var corY = document.getElementById('inputy');
+						corX.value=coords[0];
+						corY.value=coords[1];
+
+						// wait before atack
+						window.setTimeout(function()
+						{
+							// find atack button
+							var allButtons, thisButton;
+							allUnits = document.evaluate(
+							    "//input[@class='attack btn btn-attack btn-target-action']",
+							    document,
+							    null,
+							    XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE,
+							    null);
+
+							for (var i = 0; i < allUnits.snapshotLength; i++) {
+							    thisUnit = allUnits.snapshotItem(i);
+							    // do something with thisDiv
+								if (thisUnit.name == 'attack')
+								{
+									thisUnit.click();
+								}
+							}
+
+						}, time);
+					}
+						////
+					else
+					{
+						var goNext = 0;
+
+						var multVillage = GM_getValue('autoFarmMultVillage', 100);
+
+						if (multVillage == 100)
+						{
+							GM_setValue('autoFarmMultVillage', 1);
+							multVillage = 1;
+						}
+
+						if (!multVillage)
+						{
+							farmWait = 2;
+					  }
+
+						// if the first cycle
+						if (farmWait == 0)
+						{
+							// set wait to be ciclic and go to the next village
+							GM_setValue('autoFarmWait_' + watcher, 2);
+
+							goNext = 1;
+						}
+						else if (farmWait == 2) // now wait for units
+						{
+							var starter = GM_getValue('autoFarmStarter_' + watcher, 0);
+							if (currentVillageId == starter || (!multVillage))
+							{
+								GM_setValue('autoFarmWait_' + watcher, 1);
+							}
+							else
+							{
+								goNext = 1;
+							}
+						}
+						if (goNext == 1)
+						{
+						// wait before atack
+						window.setTimeout(function()
+						{
+							refreshPlaceNext(1);
+
+						}, time);
+
+						}
+					}
+
+				}
+		}
+		else
+		{
+			window.setTimeout(function()
+			{
+				// find submit button
+				var allButtons, thisButton, barbarian;
+				var moral;
+
+				barbarian = 1;
+				// Check that village is barbarian or bonus one
+				// Place, add autofarm button
+				var nodes = document.getElementsByTagName('td');
+				//window.alert('len' + nodes.length);
+				for(var i = 0; i < nodes.length; i++) {
+					if(/Игрок:/.test(nodes[i].innerHTML))
+					{
+						barbarian = 0;
+					}
+					if(/^Боевой дух:/.test(nodes[i].innerHTML))
+					{
+						moral = nodes[i].nextElementSibling.innerHTML;
+						moral = moral.substring(3, moral.length - 5);
+
+						var moralI = moral * 1;
+
+						// if moral is low, it is newbe we can farm it
+						if (moralI < 33)
+						{
+							//barbarian = 1;
+						}
+						break;
+					}
+				}
+
+				var autoFarmIndex = GM_getValue("autoFarmIndex_" + currentVillageId, 0);
+				var coords=GM_getValue('autoFarmCoordinates_' + currentVillageId, '0|0');
+				coords=coords.split(" ");
+
+				if(autoFarmIndex >= coords.length)
+				{
+					autoFarmIndex = 0;
+				}
+
+				var checkbarb = GM_getValue("autoFarmCheckBarb", 100);
+
+				if (checkbarb == 100)
+				{
+					GM_setValue("autoFarmCheckBarb", 1);
+					checkbarb = 1;
+			  }
+				if (checkbarb == 0)
+				{
+					// ignore barbarian check
+					barbarian = 1;
+			  }
+
+				if (barbarian == 1)
+				{
+
+					allUnits = document.evaluate(
+						"//input[@type='submit']",
+						document,
+						null,
+						XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE,
+						null);
+
+					// Increment index
+
+
+					GM_setValue("autoFarmIndex_" + currentVillageId, autoFarmIndex + 1);
+					for (var i = 0; i < allUnits.snapshotLength; i++) {
+						thisUnit = allUnits.snapshotItem(i);
+						// do something with thisDiv
+						if (thisUnit.name == 'submit')
+						{
+							thisUnit.click();
+						}
+					}
+				}
+				else
+				{
+					var i;
+					var found = 0;
+					var tmpStr = '';
+
+					for(i = 0; i < coords.length; i++) {
+						if (i == autoFarmIndex)
+						{
+							found = 1;
+							curCoord = coords[i];
+						}
+						else
+						{
+							if (tmpStr == '')
+							{
+								tmpStr = coords[i];
+							}
+							else
+							{
+								tmpStr += ' ' + coords[i];
+							}
+						}
+					}
+					if (found == 1)
+					{
+						GM_setValue('autoFarmCoordinates_' + currentVillageId, tmpStr);
+					}
+					refreshPlace(0);
+				}
+
+			}, time);
+		}
+	};
+
+	// Timer atack
+	var	hours 	= 0;
+	var	minutes = 1;
+	var	seconds = 13;
+	var	msec 	= 800;
+	var 	durationNode;
+	var     countDownElem;
+	var     departureElem;
+
+	var	time = 1;
+	var	submitDone = 0;
+	var 	durationTime;
+	var 	inputNode;
+	var submitButton;
+
+	var localAdd = 8;
+	var earlierSend = 400;
+	var isLoaded = 0;
+
+	var countDownShow = function() {
+		var string;
+
+		if (hours < 10 )
+			string = '0' + hours *1 + ':';
+		else
+			string =  hours *1 + ':';
+
+		if (minutes < 10 )
+			string += '0' + minutes *1 + ':';
+		else
+			string +=  minutes *1 + ':';
+
+		if (seconds < 10 )
+			string += '0' + seconds *1 ;
+		else
+			string +=  seconds *1;
+
+		countDownElem.innerHTML = string;
+		document.title = string;
+
+	}
+	var countDownAtack = function() {
+		//window.alert("down");
+		setTimeout(countDownAtack, time * 1000);
+
+		if (seconds > time)
+		{
+			seconds -= time;
+		}
+		else if (minutes)
+		{
+			minutes -= 1;
+			seconds += 60 - time;
+		}
+		else if (hours)
+		{
+			hours   -= 1;
+			minutes = 59;
+			seconds += 60 - time;
+		}
+
+		countDownShow();
+
+	}
+
+	var autoTargetAtack = function() {
+
+		//window.alert("Atack");
+		submitButton.click();
+
+	}
+
+	var NumCalled = 0;
+
+	var startCountDownTime = function()
+	{
+		NumCalled = NumCalled + 1;
+
+		var localtime = new Date();
+
+		var serverMsec =
+			localtime.getMilliseconds() * 1 +
+			((localtime.getHours() + localAdd * 1) % 24) * 3600000 +
+			localtime.getMinutes() * 60000 +
+			localtime.getSeconds() * 1000;
+
+		var durationMsec =
+			durationTime[0] * 3600000 +
+			durationTime[1] * 60000 +
+			durationTime[2] * 1000;
+
+		var inputTime = document.getElementById("target").value;
+
+		inputTime = inputTime.split(":");
+		if (inputTime[0] < 0 || inputTime[0] > 23 ||
+			inputTime[1] < 0 || inputTime[1] > 59 ||
+			inputTime[2] < 0 || inputTime[2] > 59 ||
+			inputTime[3] < 0 || inputTime[3] > 999)
+		{
+			window.alert("Invalid input");
+		}
+		else
+		{
+			var targetMsec =
+				inputTime[0] * 3600000 +
+				inputTime[1] * 60000 +
+				inputTime[2] * 1000 +
+				inputTime[3] * 1;
+
+			// Calculate time to atack
+
+			if (targetMsec < durationMsec)
+				targetMsec += (24 * 3600000);
+
+			targetMsec -= durationMsec;
+
+			if (targetMsec < serverMsec)
+				targetMsec += (24 * 3600000);
+
+			var departure = targetMsec;
+
+			targetMsec -= serverMsec;
+			targetMsec -= (earlierSend * 1);
+
+			// load atack timer if less than 2 minutes left
+			//if ( targetMsec < 2 * 60 * 1000)
+			{
+				setTimeout(autoTargetAtack, targetMsec);
+			}
+			//else
+			{
+				// reload the timer one minute before atack
+			//	setTimeout(startCountDownTime, targetMsec - 60 * 1000);
+			}
+
+
+			// load count down timer
+			if (isLoaded == 0)
+			{
+				isLoaded = 1;
+
+				var dt = new Date(departure);
+				departureElem.innerHTML = '' + dt.getUTCHours() + ':' + dt.getMinutes() + ':' + dt.getSeconds();
+
+				hours = Math.floor(targetMsec / 3600000);
+				targetMsec = targetMsec % 3600000;
+
+				minutes = Math.floor(targetMsec / 60000);
+				targetMsec = targetMsec % 60000;
+
+				seconds = Math.floor(targetMsec / 1000);
+				targetMsec = targetMsec % 1000;
+
+				countDownShow();
+				//window.alert("load timer " + time * 1000);
+				setTimeout(countDownAtack, time * 1000);
+			}
+	  	}
+	}
+
+	var addTargetTime = function() {
+
+		if (autoFarmState == 1)
+		{
+			autoFarmWait(2);
+		}
+		else
+		{
+
+			// find atack target and add edit box
+
+			var nodes = document.getElementsByTagName('td');
+			var duration =/(^Длительность:)/;
+
+			for(var i = 0; i < nodes.length; i++) {
+				var m = duration.exec(nodes[i].innerHTML);
+				if(m)
+				{
+					durationNode = nodes[i];
+					break;
+				}
+			}
+
+			durationTime = durationNode.nextElementSibling.innerHTML;
+			durationTime=durationTime.split(":");
+
+			//	Add count down time
+
+			countDownElem = document.createElement('td');
+			countDownElem.innerHTML = "Не установленно \n";
+			nodes[i].parentNode.parentNode.insertBefore(countDownElem, nodes[i].parentNode.nextSibling);
+
+			var temp = document.createElement('td');
+			temp.innerHTML = "\n	      Осталось:\n	";
+			nodes[i].parentNode.parentNode.insertBefore(temp, nodes[i].parentNode.nextSibling);
+
+			// add departure node
+			departureElem = document.createElement('td');
+			departureElem.innerHTML = "Не установленно д\n";
+			nodes[i].parentNode.parentNode.insertBefore(departureElem, nodes[i].parentNode.nextSibling);
+
+			temp = document.createElement('td');
+			temp.innerHTML = "\n		Убытие:\n	";
+			nodes[i].parentNode.parentNode.insertBefore(temp, nodes[i].parentNode.nextSibling);
+
+			// target time
+			duration =/(^Прибытие:)/;
+			for(var i = 0; i < nodes.length; i++) {
+				var m = duration.exec(nodes[i].innerHTML);
+				if(m)
+				{
+					break;
+				}
+			}
+			temp = document.createElement('td');
+			temp.innerHTML = "\n		<a id=\"startCountDownTime\" href=\"#\">Старт</a>\n	";
+			temp.addEventListener('click',startCountDownTime,true);
+			nodes[i].parentNode.parentNode.insertBefore(temp, nodes[i].parentNode.nextSibling);
+
+			temp = document.createElement('td');
+			temp.innerHTML = "<input id = \"target\" input type=\"text\" input value = \"2:2:2:222\">";
+			inputNode = temp;
+
+			nodes[i].parentNode.parentNode.insertBefore(temp, nodes[i].parentNode.nextSibling);
+
+			temp = document.createElement('td');
+			temp.innerHTML = "\n		Автоприбытие:\n	";
+			nodes[i].parentNode.parentNode.insertBefore(temp, nodes[i].parentNode.nextSibling);
+
+			// find submit button
+			var allUnits = document.evaluate(
+				"//input[@type='submit']",
+				document,
+				null,
+				XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE,
+				null);
+			for (var i = 0; i < allUnits.snapshotLength; i++) {
+				submitButton = allUnits.snapshotItem(i);
+				// do something with thisDiv
+				if (submitButton.name == 'submit')
+				{
+					break;
+				}
+			}
+
+			// read vars
+			localAdd = GM_getValue('localAdd', 25);
+			if (localAdd == 25)
+			{
+				localAdd = 0;
+				GM_setValue('localAdd', localAdd);
+			}
+
+			earlierSend = GM_getValue('earlierSend', 0);
+			if (earlierSend == 0)
+			{
+				earlierSend = 400;
+				GM_setValue('earlierSend', earlierSend);
+			}
+		}
+	}
+	// Starts/Stops autofarm process
+	var autoFarm = function() {
+		var farmWait = GM_getValue('autoFarmWait_' + currentVillageId, 0);
+		if (farmWait != 0)
+		{
+			GM_setValue('autoFarmWait_' + currentVillageId, 0);
+		}
+		farmWait = GM_getValue('autoFarmWait_' + watcher, 0);
+		if (farmWait != 0)
+		{
+			GM_setValue('autoFarmWait_' + watcher, 0);
+		}
+
+		if (autoFarmState == 1)
+		{
+			GM_setValue('autoFarmState_' + watcher, 0);
+			GM_setValue('autoFarmStarter_' + watcher, 0);
+			autoFarmState=0;
+			setautoFarmButtonName();
+			//window.alert('Фарм остановлен.');
+		}
+		else
+		{
+			GM_setValue('autoFarmState_' + watcher, 1);
+			GM_setValue('autoFarmStarter_' + watcher, currentVillageId);
+			autoFarmState=1;
+			setautoFarmButtonName();
+			//window.alert('Фарм запущен.');
+			autoFarmGetUnits();
+			autoFarmWait(1);
+		}
+	};
+
+	var autoFarmButton;
+	var autoFarmListEdit;
+	var setautoFarmButtonName = function()
+	{
+		var coords=GM_getValue('autoFarmCoordinates_' + currentVillageId, '0|0');
+		coords=coords.split(" ");
+
+		var status;
+
+		if (autoFarmState == 1)
+		{
+			status = "Стоп";
+		}
+		else
+		{
+			status = "Старт";
+		}
+
+		autoFarmButton.innerHTML = "\n		<a id=\"autoFarm\" href=\"#\">» " + status + "</a>\n	";
+		autoFarmListEdit.innerHTML = "\n		<a id=\"autoFarmListEdit\" href=\"#\">» " + " Список деревень: " + coords.length + " >>> </a>\n	";
+		autoFarmListEdit.setAttribute('colspan', "2");
+	}
+
+	// Adds farm button next to 'send all'
+	var dsrbAddAutoFarmButton = function(node) {
+		var tr = document.createElement('tr');
+
+		autoFarmButton = document.createElement('td');
+		autoFarmListEdit = document.createElement('td');
+		setautoFarmButtonName();
+		autoFarmButton.addEventListener('click',autoFarm,true);
+
+		tr.appendChild(autoFarmButton);
+		tr.appendChild(autoFarmListEdit);
+
+		node.parentNode.parentNode.parentNode.appendChild(tr);
+	};
+
+	var editsettings = new Array();
+
+	var settingsEditbox = function(num, node, name, text1, config1, text2, config2)
+	{
+		// create title
+		var tr = document.createElement('tr');
+		var td = document.createElement('td');
+		td.innerHTML = name;
+		tr.appendChild(td);
+
+		node.appendChild(tr);
+
+		// get box value
+		var val = GM_getValue(config1, '0');
+
+		// add label
+		td = document.createElement('td');
+		tr.appendChild(td);
+
+		var input = document.createElement('input');
+
+		input.setAttribute('name', config1);
+		input.setAttribute('size', "8");
+		input.setAttribute('type', "text");
+		input.setAttribute('value', val);
+
+		td.appendChild(input);
+		td.innerHTML = td.innerHTML + ' ' + text1 + ' ';
+
+		node.appendChild(tr);
+
+		editsettings.push(config1);
+
+		// add second editbox if needed
+		if (num == 2)
+		{
+			val = GM_getValue(config2, '0');
+			input = document.createElement('input');
+
+			input.setAttribute('name', config2);
+			input.setAttribute('size', "8");
+			input.setAttribute('type', "text");
+			input.setAttribute('value', val);
+
+			td.appendChild(input);
+			td.innerHTML = td.innerHTML + ' ' + text2;
+
+			editsettings.push(config2);
+		}
+
+		//checksettings.push(config);
+		//checkinputs.push(input);
+	}
+
+	var checksettings = new Array();
+
+	var settingsCheckbox = function(node, name, text, config)
+	{
+		// create title
+		var tr = document.createElement('tr');
+		var td = document.createElement('td');
+		td.innerHTML = name;
+		tr.appendChild(td);
+
+		node.appendChild(tr);
+
+		// get box value
+		var val = GM_getValue(config, '0');
+
+		// add label
+		td = document.createElement('td');
+		tr.appendChild(td);
+
+		var label =  document.createElement('td');
+		td.appendChild(label);
+
+		var input = document.createElement('input');
+		input.setAttribute('name', config);
+		if (val == '1')
+		{
+			input.setAttribute('checked', 'checked');
+		}
+		input.setAttribute('type', 'checkbox');
+		label.appendChild(input);
+		label.innerHTML = label.innerHTML + text;
+
+		node.appendChild(tr);
+
+		checksettings.push(config);
+	}
+
+	var saveSettings = function()
+	{
+		for(var i = 0; i < checksettings.length; i++) {
+			var elem = document.getElementsByName(checksettings[i]);
+
+			if (elem[0].checked == true)
+			{
+				//window.alert(checksettings[i]);
+				GM_setValue(checksettings[i], 1);
+			}
+			else {
+				//window.alert(checksettings[i]);
+				GM_setValue(checksettings[i], 0);
+			}
+		}
+
+		for(var i = 0; i < editsettings.length; i++) {
+			var elem = document.getElementsByName(editsettings[i]);
+
+			//window.alert(editsettings[i] + ' = ' + elem[0].value);
+			GM_setValue(editsettings[i], elem[0].value);
+
+		}
+		window.alert('сохраненно');
+	}
+
+	// settings
+	var settingsshow = function()
+	{
+		//window.alert("setting");
+		// search for place
+		var nodes = document.getElementsByTagName('th');
+		var curnode = nodes[0];
+
+		// create title
+		var tr = document.createElement('tr');
+		var td = document.createElement('th');
+		td.setAttribute('colspan', "2");
+		td.innerHTML = 'Настройки бота версия ' + version;
+		tr.appendChild(td);
+
+		//curnode.parentNode.parentNode.insertBefore(tr, curnode.parentNode.nextSibling);
+		curnode.parentNode.parentNode.appendChild(tr);
+
+		//settingsCheckbox(curnode.parentNode.parentNode, 'test2', 'test1', 'test1');
+		settingsCheckbox(curnode.parentNode.parentNode, 'Варварки', 'Автоматически удалять обжитые деревни', 'autoFarmCheckBarb');
+		settingsCheckbox(curnode.parentNode.parentNode, 'Деревни', 'Автоматически переходить на следующую деревню в группе', 'autoFarmMultVillage');
+
+		//settingsEditbox(2, curnode.parentNode.parentNode, 'testedit', 'testedit1', 'testedit1', 'testedit2', 'testedit2');
+		settingsEditbox(2, curnode.parentNode.parentNode, 'Отряд кавалерии', '<- Легкий  кавалерист', 'autoFarmUnitLc', '<- Разведчик', 'autoFarmUnitSpy');
+		settingsEditbox(2, curnode.parentNode.parentNode, 'Отряд пехоты',    '<- Мужичок с топором', 'autoFarmUnitAxe', '<- Копейщик', 'autoFarmUnitSpear');
+		settingsEditbox(1, curnode.parentNode.parentNode, 'Удаление пехоты',    'Расстояние грабежа пехотными отрядами (в клетках карты)', 'autoFarmAxe', '', '');
+		settingsEditbox(1, curnode.parentNode.parentNode, 'Время', 'Разница с сервером (в часах)', 'localAdd', '', '');
+		settingsEditbox(1, curnode.parentNode.parentNode, 'Авто атака', 'Упреждение (в миллисекундах)', 'earlierSend', '', '');
+
+		// add button
+		tr = document.createElement('tr');
+		td = document.createElement('td');
+		td.setAttribute('colspan', "2");
+		tr.appendChild(td);
+		td.innerHTML = "<a href=\"#\">Сохранить настройки</a>";
+		td.addEventListener('click', saveSettings, true);
+		curnode.parentNode.parentNode.appendChild(tr);
+	}
+
+	// Read current farm state
+	// autoFarmIndex - index of the next village to atack
+	// autoFarmState - 1 - active, 0 - passive
+
+	setCurrentVillageId();
+	getWorldId();
+
+	var autoFarmState;
+
+	autoFarmState = GM_getValue("autoFarmState_" + watcher, 0);
+
+	// Try to find type of current page
+	var url=document.URL;
+	if(url.search(/screen=place/)!= -1 && url.search(/try=confirm/)==-1 )
+	{
+		// on demand atack
+		var target=document.URL;
+		if (target.search('target')==-1)
+		{
+			filterAtacks();
+			autoFarmButtonPlace();
+
+			// If we in the active state wait for the full window load and start atack procedure
+			if (autoFarmState == 1)
+			{
+				// add listener for window
+				window.addEventListener(
+		    			'load',
+		    			autoFarmWait(1),
+		    			true);
+			}
+		}
+	}
+	else if(url.search(/screen=place/)!= -1 && url.search(/try=confirm/)!=0 )
+	{
+		// Submit
+		// If screen still contain coordinates, it was some kind of error, stop auto farm
+		if (!document.getElementById('inputx'))
+		{
+			window.addEventListener(
+	    			'load',
+	    			addTargetTime(),
+	    			true);
+		}
+
+		// If we in the active state wait for the full window load and start atack submit procedure
+		if (autoFarmState == 1)
+		{
+			if (document.getElementById('inputx'))
+			{
+				// Increment index
+				var autoFarmIndex = GM_getValue("autoFarmIndex_" + currentVillageId, 0);
+				var coords=GM_getValue('autoFarmCoordinates_' + currentVillageId, '0|0');
+				coords=coords.split(" ");
+
+
+				if(autoFarmIndex >= coords.length)
+				{
+					autoFarmIndex = 0;
+				}
+				GM_setValue("autoFarmIndex_" + currentVillageId, autoFarmIndex + 1);
+
+				// add listener for window
+				window.addEventListener(
+		    			'load',
+		    			autoFarmWait(1),
+		    			true);
+			}
+		}
+		else
+		{
+			autoFarmButtonPlace();
+		}
+	}
+	else if(url.search(/screen=info_village/)!= -1)
+	{
+		infoVillageAddFunc();
+	}
+	else if (url.search(/mode=settings/)!=-1)
+	{
+		settingsshow();
+	}
+	else
+	{
+		// Other
+		//window.alert(url);
+	}
+})();
