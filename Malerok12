@@ -1,8 +1,7 @@
 // ==UserScript==
 // @name           Malerok12
 // @namespace      http://osor.de/
-// @include        http://ru*.voyna-plemyon.ru/game.php*
-// @include        https://ru*.voyna-plemyon.ru/game.php*
+// @include        https://ru*.voyna-plemyon.ru/game.php*screen=place&try=confirm*
 // ==/UserScript==
 
 // version 0.2
